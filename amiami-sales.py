@@ -27,7 +27,7 @@ driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), opti
 base_search_url = "https://www.amiami.com/eng/search/list/?s_keywords=1/7&s_st_condition_flg=1&s_st_list_newitem_available=1&pagecnt="
 # Load first page and wait for product container
 driver.get(base_search_url + "1")
-WebDriverWait(driver, 10).until(
+WebDriverWait(driver, 30).until(
     EC.presence_of_element_located((By.CLASS_NAME, "newly-added-items__item__name"))
 )
 
