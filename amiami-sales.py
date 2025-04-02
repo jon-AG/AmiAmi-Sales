@@ -12,14 +12,14 @@ from openpyxl.worksheet.hyperlink import Hyperlink
 
 # Setup Chrome options using undetected-chromedriver
 options = uc.ChromeOptions()
-# Consider commenting out headless mode if the site blocks headless browsers
+# Uncomment the following line to run in headless mode (if needed)
 # options.add_argument("--headless")
 options.add_argument("--disable-gpu")
 options.add_argument("--no-sandbox")
 options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-# These experimental options help reduce automation detection:
-options.add_experimental_option("excludeSwitches", ["enable-automation"])
-options.add_experimental_option("useAutomationExtension", False)
+# Do not add the experimental options below – they cause errors with undetected-chromedriver:
+# options.add_experimental_option("excludeSwitches", ["enable-automation"])
+# options.add_experimental_option("useAutomationExtension", False)
 
 # Initialize undetected Chrome driver
 driver = uc.Chrome(options=options)
@@ -56,8 +56,6 @@ results = []
 for page in range(1, total_pages + 1):
     print(f"Scraping page {page} of {total_pages}...")
     driver.get(base_search_url + str(page))
-    # Optionally, add a small delay if needed:
-    # import time; time.sleep(2)
     WebDriverWait(driver, 60).until(
         EC.presence_of_element_located((By.CLASS_NAME, "newly-added-items__item__name"))
     )
@@ -100,7 +98,6 @@ print("\nFinished scraping. Found products:\n")
 final_results = []
 for title, link, discounted_str, original_str in results:
     try:
-        # Extract integers from price strings
         discounted = int(discounted_str.replace(" JPY", "").replace(",", ""))
         original = int(original_str.replace(" JPY", "").replace(",", ""))
         discount_percent = round((original - discounted) / original * 100, 2)
