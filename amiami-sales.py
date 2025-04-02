@@ -11,7 +11,6 @@ from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Font
 from openpyxl.worksheet.hyperlink import Hyperlink
-import datetime
 
 # Setup Chrome options
 options = webdriver.ChromeOptions()
@@ -57,7 +56,7 @@ results = []
 for page in range(1, total_pages + 1):
     print(f"Scraping page {page} of {total_pages}...")
     driver.get(base_search_url + str(page))
-    WebDriverWait(driver, 10).until(
+    WebDriverWait(driver, 30).until(
         EC.presence_of_element_located((By.CLASS_NAME, "newly-added-items__item__name"))
     )
 
@@ -115,8 +114,7 @@ for title, link, discounted_str, original_str in results:
         continue  # Skip malformed data
 
 # Write to CSV
-timestamp = datetime.datetime.utcnow().isoformat()
-header = f"# Updated at {timestamp}\nTitle|Link|Discounted Price|Original Price|Discount\n"
+header = f"Title|Link|Discounted Price|Original Price|Discount\n"
 with open("AmiAmi_sales.csv", "w") as f:
     f.write(header)
     for item in final_results:
