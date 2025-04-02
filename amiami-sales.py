@@ -11,6 +11,7 @@ from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Font
 from openpyxl.worksheet.hyperlink import Hyperlink
+import datetime
 
 # Setup Chrome options
 options = webdriver.ChromeOptions()
@@ -114,12 +115,12 @@ for title, link, discounted_str, original_str in results:
         continue  # Skip malformed data
 
 # Write to CSV
-header = "Title|Link|Discounted Price|Original Price|Discount\n"
+timestamp = datetime.datetime.utcnow().isoformat()
+header = f"# Updated at {timestamp}\nTitle|Link|Discounted Price|Original Price|Discount\n"
 with open("AmiAmi_sales.csv", "w") as f:
     f.write(header)
-
     for item in final_results:
-        f.write(f"{item['Title']}|{item['Link']}|{item['Link']}|{item['Original Price']}|{item['Discount %']}\n")
+        f.write(f"{item['Title']}|{item['Link']}|{item['Discounted Price']}|{item['Original Price']}|{item['Discount %']}\n")
 
 for item in final_results:
     print(f"Title: {item['Title']}")
