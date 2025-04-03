@@ -29,8 +29,9 @@ try:
     WebDriverWait(driver, 60).until(
         EC.presence_of_element_located((By.CLASS_NAME, "newly-added-items__item__name"))
     )
-except Exception as e:
-    print(f"❌ Exception while loading page 1: {e}")
+except Exception as e: 
+    print("🔎 Dumping page content:\n")
+    print(driver.page_source[:3000])  # just print first 3000 chars
     driver.quit()
     exit(1)
 
@@ -50,8 +51,11 @@ for page in range(1, total_pages + 1):
             EC.presence_of_element_located((By.CLASS_NAME, "newly-added-items__item__name"))
         )
     except Exception as e:
-        print(f"❌ Exception on page {page}: {e}")
-        continue
+        print(f"❌ Exception while loading page 1: {e}")
+        print("🔎 Dumping page content:\n")
+        print(driver.page_source[:3000])  # just print first 3000 chars
+        driver.quit()
+        exit(1)
 
     soup = BeautifulSoup(driver.page_source, "html.parser")
     product_links = soup.find_all("a", href=True)
