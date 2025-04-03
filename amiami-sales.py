@@ -34,7 +34,7 @@ async def scrape():
             await page.wait_for_timeout(3000)
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             await page.wait_for_timeout(3000)
-            
+
             content = await page.content()
             soup = BeautifulSoup(content, "html.parser")
             product_links = soup.find_all("a", href=True)
@@ -60,7 +60,6 @@ async def scrape():
                         results.append((title, full_link, discounted_price + " JPY", original_price + " JPY"))
 
         await browser.close()
-
     return results
 
 async def main():
@@ -89,9 +88,18 @@ async def main():
         f.write("Title|Link|Discounted Price|Original Price|Discount\n")
         for item in final_results:
             f.write(f"{item['Title']}|{item['Link']}|{item['Discounted Price']}|{item['Original Price']}|{item['Discount %']}\n")
-
     print("✅ Saved to AmiAmi_sales.csv")
 
+    # Save to Markdown
+    with open("AmiAmi_sales.md", "w", encoding="utf-8") as f:
+        f.write("### 📦 AmiAmi Discounted Figures\n\n")
+        f.write("| Title | Discounted Price | Original Price | Discount | Link |\n")
+        f.write("|-------|------------------|----------------|----------|------|\n")
+        for item in final_results:
+            f.write(f"| {item['Title']} | {item['Discounted Price']} | {item['Original Price']} | {item['Discount %']} | [Link]({item['Link']}) |\n")
+    print("✅ Saved to AmiAmi_sales.md")
+
+    # Optional print preview
     for item in final_results:
         print(f"Title: {item['Title']}")
         print(f"Link: {item['Link']}")
