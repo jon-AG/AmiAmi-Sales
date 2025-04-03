@@ -25,6 +25,7 @@ async def scrape():
         page_items = soup.find_all("li", class_="pager-list__item pager-list__item_num pconly")
         page_numbers = [int(li.text.strip()) for li in page_items if li.text.strip().isdigit()]
         total_pages = max(page_numbers) if page_numbers else 1
+        total_pages=1
 
         print(f"✅ Total pages found: {total_pages}")
 

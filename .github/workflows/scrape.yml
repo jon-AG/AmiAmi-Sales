@@ -47,7 +47,7 @@ jobs:
 
     - name: Run Playwright scraper
       run: |
-        python amiami_playwright.py
+        python amiami-sales.py
         echo "Scraper run complete."
         ls -lh AmiAmi_sales.csv || echo "CSV not found"
         git status
