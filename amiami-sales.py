@@ -1,125 +1,103 @@
 import re
-import time
+import asyncio
 import pandas as pd
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from webdriver_manager.chrome import ChromeDriverManager
+from playwright.async_api import async_playwright
 
-# === Setup Chrome ===
-options = webdriver.ChromeOptions()
-options.add_argument("--headless")
-options.add_argument("--disable-gpu")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-
-driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-
-def wait_for_products(timeout=60):
-    try:
-        WebDriverWait(driver, timeout).until(
-            lambda d: d.find_elements(By.CLASS_NAME, "newly-added-items__item__name")
-        )
-        return True
-    except TimeoutException as e:
-        return False
-
-# === Scraping Starts ===
+# === Config ===
 base_search_url = "https://www.amiami.com/eng/search/list/?s_keywords=1/7&s_st_condition_flg=1&s_st_list_newitem_available=1&pagecnt="
 base_url = "https://www.amiami.com"
-results = []
 
-print("🔍 Loading first page...")
-driver.get(base_search_url + "1")
-driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-time.sleep(3)
+async def scrape():
+    results = []
+    print("🔍 Launching browser...")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+        page = await context.new_page()
 
-if not wait_for_products():
-    print("❌ Timeout: Products not found on page 1")
-    print("🔎 Partial page content:\n")
-    print(driver.page_source[:3000])
-    driver.quit()
-    exit(1)
+        print("🔍 Loading first page...")
+        await page.goto(base_search_url + "1")
+        await page.wait_for_timeout(3000)
+        content = await page.content()
+        soup = BeautifulSoup(content, "html.parser")
 
-soup = BeautifulSoup(driver.page_source, "html.parser")
-page_items = soup.find_all("li", class_="pager-list__item pager-list__item_num pconly")
-page_numbers = [int(li.text.strip()) for li in page_items if li.text.strip().isdigit()]
-total_pages = max(page_numbers) if page_numbers else 1
+        page_items = soup.find_all("li", class_="pager-list__item pager-list__item_num pconly")
+        page_numbers = [int(li.text.strip()) for li in page_items if li.text.strip().isdigit()]
+        total_pages = max(page_numbers) if page_numbers else 1
 
-print(f"✅ Total pages found: {total_pages}")
+        print(f"✅ Total pages found: {total_pages}")
 
-# === Scrape each page ===
-for page in range(1, total_pages + 1):
-    print(f"➡️ Scraping page {page} of {total_pages}")
-    driver.get(base_search_url + str(page))
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(3)
+        for page_num in range(1, total_pages + 1):
+            print(f"➡️ Scraping page {page_num} of {total_pages}")
+            await page.goto(base_search_url + str(page_num))
+            await page.wait_for_timeout(3000)
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await page.wait_for_timeout(3000)
+            
+            content = await page.content()
+            soup = BeautifulSoup(content, "html.parser")
+            product_links = soup.find_all("a", href=True)
 
-    if not wait_for_products(timeout=30):
-        print(f"❌ Timeout: Products not found on page {page}")
-        print(driver.page_source[:3000])
-        continue
+            for tag in product_links:
+                href = tag['href']
+                if href.startswith("/eng/detail/?gcode="):
+                    full_link = base_url + href
+                    title_tag = tag.find("p", class_="newly-added-items__item__name")
+                    price_tag = tag.find("p", class_="newly-added-items__item__price")
+                    original_price_tag = tag.find("span", class_="newly-added-items__item__price_state_discount mleft")
 
-    soup = BeautifulSoup(driver.page_source, "html.parser")
-    product_links = soup.find_all("a", href=True)
+                    if not original_price_tag:
+                        continue
 
-    for tag in product_links:
-        href = tag['href']
-        if href.startswith("/eng/detail/?gcode="):
-            full_link = base_url + href
-            title_tag = tag.find("p", class_="newly-added-items__item__name")
-            price_tag = tag.find("p", class_="newly-added-items__item__price")
-            original_price_tag = tag.find("span", class_="newly-added-items__item__price_state_discount mleft")
+                    title = title_tag.get_text(strip=True) if title_tag else "No title"
+                    match = re.search(r"[\d,]+", price_tag.text) if price_tag else None
+                    discounted_price = match.group(0) if match else None
+                    original_match = re.search(r"[\d,]+", original_price_tag.text)
+                    original_price = original_match.group(0) if original_match else None
 
-            if not original_price_tag:
-                continue
+                    if discounted_price and original_price:
+                        results.append((title, full_link, discounted_price + " JPY", original_price + " JPY"))
 
-            title = title_tag.get_text(strip=True) if title_tag else "No title"
-            match = re.search(r"[\d,]+", price_tag.text) if price_tag else None
-            discounted_price = match.group(0) if match else None
-            original_match = re.search(r"[\d,]+", original_price_tag.text)
-            original_price = original_match.group(0) if original_match else None
+        await browser.close()
 
-            if discounted_price and original_price:
-                results.append((title, full_link, discounted_price + " JPY", original_price + " JPY"))
+    return results
 
-driver.quit()
+async def main():
+    results = await scrape()
+    print(f"\n📦 Finished scraping. Total products found: {len(results)}")
 
-# === Process results ===
-print(f"\n📦 Finished scraping. Total products found: {len(results)}")
-final_results = []
-for title, link, discounted_str, original_str in results:
-    try:
-        discounted = int(discounted_str.replace(" JPY", "").replace(",", ""))
-        original = int(original_str.replace(" JPY", "").replace(",", ""))
-        discount_percent = round((original - discounted) / original * 100, 2)
-        final_results.append({
-            "Title": title,
-            "Link": link,
-            "Discounted Price": f"{discounted:,} JPY",
-            "Original Price": f"{original:,} JPY",
-            "Discount %": f"{discount_percent}%"
-        })
-    except Exception as e:
-        print(f"⚠️ Error processing item '{title}': {e}")
-        continue
+    final_results = []
+    for title, link, discounted_str, original_str in results:
+        try:
+            discounted = int(discounted_str.replace(" JPY", "").replace(",", ""))
+            original = int(original_str.replace(" JPY", "").replace(",", ""))
+            discount_percent = round((original - discounted) / original * 100, 2)
+            final_results.append({
+                "Title": title,
+                "Link": link,
+                "Discounted Price": f"{discounted:,} JPY",
+                "Original Price": f"{original:,} JPY",
+                "Discount %": f"{discount_percent}%"
+            })
+        except Exception as e:
+            print(f"⚠️ Error processing item '{title}': {e}")
+            continue
 
-# === Save to CSV ===
-with open("AmiAmi_sales.csv", "w", encoding="utf-8") as f:
-    f.write("Title|Link|Discounted Price|Original Price|Discount\n")
+    # Save to CSV
+    with open("AmiAmi_sales.csv", "w", encoding="utf-8") as f:
+        f.write("Title|Link|Discounted Price|Original Price|Discount\n")
+        for item in final_results:
+            f.write(f"{item['Title']}|{item['Link']}|{item['Discounted Price']}|{item['Original Price']}|{item['Discount %']}\n")
+
+    print("✅ Saved to AmiAmi_sales.csv")
+
     for item in final_results:
-        f.write(f"{item['Title']}|{item['Link']}|{item['Discounted Price']}|{item['Original Price']}|{item['Discount %']}\n")
+        print(f"Title: {item['Title']}")
+        print(f"Link: {item['Link']}")
+        print(f"Discounted Price: {item['Discounted Price']}")
+        print(f"Original Price:   {item['Original Price']}")
+        print(f"Discount:         {item['Discount %']}\n")
 
-print("✅ Saved to AmiAmi_sales.csv")
-
-# === Print results ===
-for item in final_results:
-    print(f"Title: {item['Title']}")
-    print(f"Link: {item['Link']}")
-    print(f"Discounted Price: {item['Discounted Price']}")
-    print(f"Original Price:   {item['Original Price']}")
-    print(f"Discount:         {item['Discount %']}\n")
+if __name__ == "__main__":
+    asyncio.run(main())
