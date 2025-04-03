@@ -53,11 +53,12 @@ jobs:
         ls -lh AmiAmi_sales.md || echo "md not found"
         git status
 
-    - name: Commit and push CSV
+    - name: Commit and push CSV/MD
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add AmiAmi_sales.csv
-        git add AmiAmi_sales.md
+        git add AmiAmi_sales.csv AmiAmi_sales.md
         git commit -m "Auto-update CSV/MD" || echo "No changes to commit"
+        git pull --rebase origin main || echo "No rebase needed"
         git push origin HEAD
+
