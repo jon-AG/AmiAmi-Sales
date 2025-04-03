@@ -18,11 +18,6 @@ options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
-def save_debug_page(driver, filename="timeout_debug.html"):
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write(driver.page_source)
-    print(f"⚠️ Saved debug HTML to {filename}")
-
 # === Scraping Starts ===
 base_search_url = "https://www.amiami.com/eng/search/list/?s_keywords=1/7&s_st_condition_flg=1&s_st_list_newitem_available=1&pagecnt="
 base_url = "https://www.amiami.com"
@@ -34,9 +29,8 @@ try:
     WebDriverWait(driver, 60).until(
         EC.presence_of_element_located((By.CLASS_NAME, "newly-added-items__item__name"))
     )
-except TimeoutException:
-    print("❌ Timeout while loading page 1.")
-    save_debug_page(driver)
+except Exception as e:
+    print(f"❌ Exception while loading page 1: {e}")
     driver.quit()
     exit(1)
 
@@ -55,9 +49,8 @@ for page in range(1, total_pages + 1):
         WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.CLASS_NAME, "newly-added-items__item__name"))
         )
-    except TimeoutException:
-        print(f"❌ Timeout on page {page}. Saving debug output.")
-        save_debug_page(driver, f"timeout_debug_page_{page}.html")
+    except Exception as e:
+        print(f"❌ Exception on page {page}: {e}")
         continue
 
     soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -111,3 +104,11 @@ with open("AmiAmi_sales.csv", "w", encoding="utf-8") as f:
         f.write(f"{item['Title']}|{item['Link']}|{item['Discounted Price']}|{item['Original Price']}|{item['Discount %']}\n")
 
 print("✅ Saved to AmiAmi_sales.csv")
+
+# Print results
+for item in final_results:
+    print(f"Title: {item['Title']}")
+    print(f"Link: {item['Link']}")
+    print(f"Discounted Price: {item['Link']}")
+    print(f"Original Price:   {item['Original Price']}")
+    print(f"Discount:         {item['Discount %']}\n")
