@@ -1,4 +1,5 @@
 import re
+import time
 import pandas as pd
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -6,7 +7,6 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 # === Setup Chrome ===
@@ -14,24 +14,34 @@ options = webdriver.ChromeOptions()
 options.add_argument("--headless")
 options.add_argument("--disable-gpu")
 options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
 options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+def wait_for_products(timeout=60):
+    try:
+        WebDriverWait(driver, timeout).until(
+            lambda d: d.find_elements(By.CLASS_NAME, "newly-added-items__item__name")
+        )
+        return True
+    except TimeoutException as e:
+        return False
 
 # === Scraping Starts ===
 base_search_url = "https://www.amiami.com/eng/search/list/?s_keywords=1/7&s_st_condition_flg=1&s_st_list_newitem_available=1&pagecnt="
 base_url = "https://www.amiami.com"
 results = []
 
-try:
-    print("🔍 Loading first page...")
-    driver.get(base_search_url + "1")
-    WebDriverWait(driver, 60).until(
-        EC.presence_of_element_located((By.CLASS_NAME, "newly-added-items__item__name"))
-    )
-except Exception as e: 
-    print("🔎 Dumping page content:\n")
-    print(driver.page_source[:3000])  # just print first 3000 chars
+print("🔍 Loading first page...")
+driver.get(base_search_url + "1")
+driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+time.sleep(3)
+
+if not wait_for_products():
+    print("❌ Timeout: Products not found on page 1")
+    print("🔎 Partial page content:\n")
+    print(driver.page_source[:3000])
     driver.quit()
     exit(1)
 
@@ -45,17 +55,14 @@ print(f"✅ Total pages found: {total_pages}")
 # === Scrape each page ===
 for page in range(1, total_pages + 1):
     print(f"➡️ Scraping page {page} of {total_pages}")
-    try:
-        driver.get(base_search_url + str(page))
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "newly-added-items__item__name"))
-        )
-    except Exception as e:
-        print(f"❌ Exception while loading page 1: {e}")
-        print("🔎 Dumping page content:\n")
-        print(driver.page_source[:3000])  # just print first 3000 chars
-        driver.quit()
-        exit(1)
+    driver.get(base_search_url + str(page))
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    time.sleep(3)
+
+    if not wait_for_products(timeout=30):
+        print(f"❌ Timeout: Products not found on page {page}")
+        print(driver.page_source[:3000])
+        continue
 
     soup = BeautifulSoup(driver.page_source, "html.parser")
     product_links = soup.find_all("a", href=True)
@@ -109,10 +116,10 @@ with open("AmiAmi_sales.csv", "w", encoding="utf-8") as f:
 
 print("✅ Saved to AmiAmi_sales.csv")
 
-# Print results
+# === Print results ===
 for item in final_results:
     print(f"Title: {item['Title']}")
     print(f"Link: {item['Link']}")
-    print(f"Discounted Price: {item['Link']}")
+    print(f"Discounted Price: {item['Discounted Price']}")
     print(f"Original Price:   {item['Original Price']}")
     print(f"Discount:         {item['Discount %']}\n")
