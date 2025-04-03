@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # <-- needed for push
+  contents: write
 
 jobs:
   run-scraper:
@@ -21,13 +21,24 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Install dependencies
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget unzip xvfb libxi6 libgconf-2-4 libnss3 libxss1 libappindicator1 libindicator7 libatk-bridge2.0-0 libgtk-3-0 fonts-liberation libasound2 libu2f-udev
+
+    - name: Install Chrome
+      run: |
+        wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+        sudo dpkg -i google-chrome-stable_current_amd64.deb || sudo apt-get -f install -y
+        google-chrome --version
+
+    - name: Install Python dependencies
       run: |
         pip install -r requirements.txt
 
-    - name: Run scraper
+    - name: Run scraper with virtual display
       run: |
-        python amiami-sales.py
+        xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' python amiami-sales.py
         echo "Scraper run complete."
         ls -lh AmiAmi_sales.csv || echo "CSV not found"
         git status
