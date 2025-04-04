@@ -46,18 +46,21 @@ async def scrape():
                     full_link = base_url + href
                     gcode_match = re.search(r"gcode=([A-Z0-9\-]+)", href)
                     gcode = gcode_match.group(1) if gcode_match else ""
-                    img_url = f"https://img.amiami.com/images/product/main/243/{gcode}.jpg"
 
                     title_tag = tag.find("p", class_="newly-added-items__item__name")
                     price_tag = tag.find("p", class_="newly-added-items__item__price")
                     original_price_tag = tag.find("span", class_="newly-added-items__item__price_state_discount mleft")
 
-                    # Determine item status by checking the status list.
-                    # If a status <li> is visible (i.e. does not have 'display: none' in its style),
-                    # then that text is used as the condition. If none are visible, then the item is new.
                     product_container = tag.find_parent("li", class_="newly-added-items__item")
                     condition = "New"
+                    img_url = ""
                     if product_container:
+                        # ✅ Extract the actual image URL from the <img> tag
+                        img_tag = product_container.find("img")
+                        if img_tag and "src" in img_tag.attrs:
+                            img_url = img_tag["src"]
+
+                        # ✅ Determine status from tag list
                         status_ul = product_container.find("ul", class_="newly-added-items__item__tag-list")
                         if status_ul:
                             for li in status_ul.find_all("li"):
@@ -66,8 +69,7 @@ async def scrape():
                                     condition = li.get_text(strip=True)
                                     break
 
-                    # Skip items without an original price (i.e., items not on discount)
-                    if not original_price_tag:
+                    if not img_url.startswith("http") or not original_price_tag:
                         continue
 
                     title = title_tag.get_text(strip=True) if title_tag else "No title"
@@ -119,7 +121,6 @@ async def main():
         f.write("|-----------|-----|-------|------------------|----------------|----------|------|\n")
         for item in final_results:
             f.write(f"| {item['Condition']} | ![]({item['Image']}) | {item['Title']} | {item['Discounted Price']} | {item['Original Price']} | {item['Discount %']} | [Link]({item['Link']}) |\n")
-
     print("✅ Saved to AmiAmi_sales.md")
 
     # Save to Excel with filters, auto width and custom formatting for the Title column
@@ -139,11 +140,8 @@ async def main():
         # Set column widths. For Title, use fixed width and wrap text.
         for i, col in enumerate(df.columns):
             if col == "Title":
-                # Set Title column width to 50 (adjust as needed) with text wrapping.
                 worksheet.set_column(i, i, 50, title_format)
             else:
-                # Auto-adjust other columns width based on maximum content length.
-                # Get maximum width between header and all cell values.
                 column_data = df[col].astype(str)
                 max_len = max(column_data.map(len).max(), len(col)) + 2
                 worksheet.set_column(i, i, max_len)
