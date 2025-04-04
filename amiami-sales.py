@@ -25,6 +25,7 @@ async def scrape():
         page_items = soup.find_all("li", class_="pager-list__item pager-list__item_num pconly")
         page_numbers = [int(li.text.strip()) for li in page_items if li.text.strip().isdigit()]
         total_pages = max(page_numbers) if page_numbers else 1
+        total_pages = 1  # Override for testing
 
         print(f"✅ Total pages found: {total_pages}")
 
@@ -43,10 +44,29 @@ async def scrape():
                 href = tag['href']
                 if href.startswith("/eng/detail/?gcode="):
                     full_link = base_url + href
+                    gcode_match = re.search(r"gcode=([A-Z0-9\-]+)", href)
+                    gcode = gcode_match.group(1) if gcode_match else ""
+                    img_url = f"https://img.amiami.com/images/product/main/243/{gcode}.jpg"
+
                     title_tag = tag.find("p", class_="newly-added-items__item__name")
                     price_tag = tag.find("p", class_="newly-added-items__item__price")
                     original_price_tag = tag.find("span", class_="newly-added-items__item__price_state_discount mleft")
 
+                    # Determine item status by checking the status list.
+                    # If a status <li> is visible (i.e. does not have 'display: none' in its style),
+                    # then that text is used as the condition. If none are visible, then the item is new.
+                    product_container = tag.find_parent("li", class_="newly-added-items__item")
+                    condition = "New"
+                    if product_container:
+                        status_ul = product_container.find("ul", class_="newly-added-items__item__tag-list")
+                        if status_ul:
+                            for li in status_ul.find_all("li"):
+                                style = li.get("style", "")
+                                if "display: none" not in style:
+                                    condition = li.get_text(strip=True)
+                                    break
+
+                    # Skip items without an original price (i.e., items not on discount)
                     if not original_price_tag:
                         continue
 
@@ -57,7 +77,7 @@ async def scrape():
                     original_price = original_match.group(0) if original_match else None
 
                     if discounted_price and original_price:
-                        results.append((title, full_link, discounted_price + " JPY", original_price + " JPY"))
+                        results.append((condition, title, full_link, discounted_price + " JPY", original_price + " JPY", img_url))
 
         await browser.close()
     return results
@@ -67,14 +87,16 @@ async def main():
     print(f"\n📦 Finished scraping. Total products found: {len(results)}")
 
     final_results = []
-    for title, link, discounted_str, original_str in results:
+    for condition, title, link, discounted_str, original_str, img_url in results:
         try:
             discounted = int(discounted_str.replace(" JPY", "").replace(",", ""))
             original = int(original_str.replace(" JPY", "").replace(",", ""))
             discount_percent = round((original - discounted) / original * 100, 2)
             final_results.append({
+                "Condition": condition,
                 "Title": title,
                 "Link": link,
+                "Image": img_url,
                 "Discounted Price": f"{discounted:,} JPY",
                 "Original Price": f"{original:,} JPY",
                 "Discount %": f"{discount_percent}%"
@@ -85,27 +107,57 @@ async def main():
 
     # Save to CSV
     with open("AmiAmi_sales.csv", "w", encoding="utf-8") as f:
-        f.write("Title|Link|Discounted Price|Original Price|Discount\n")
+        f.write("Condition|Title|Link|Discounted Price|Original Price|Discount|Image\n")
         for item in final_results:
-            f.write(f"{item['Title']}|{item['Link']}|{item['Discounted Price']}|{item['Original Price']}|{item['Discount %']}\n")
+            f.write(f"{item['Condition']}|{item['Title']}|{item['Link']}|{item['Discounted Price']}|{item['Original Price']}|{item['Discount %']}|{item['Image']}\n")
     print("✅ Saved to AmiAmi_sales.csv")
 
     # Save to Markdown
     with open("AmiAmi_sales.md", "w", encoding="utf-8") as f:
         f.write("### 📦 AmiAmi Discounted Figures\n\n")
-        f.write("| Title | Discounted Price | Original Price | Discount | Link |\n")
-        f.write("|-------|------------------|----------------|----------|------|\n")
+        f.write("| Condition | Pic | Title | Discounted Price | Original Price | Discount | Link |\n")
+        f.write("|-----------|-----|-------|------------------|----------------|----------|------|\n")
         for item in final_results:
-            f.write(f"| {item['Title']} | {item['Discounted Price']} | {item['Original Price']} | {item['Discount %']} | [Link]({item['Link']}) |\n")
+            f.write(f"| {item['Condition']} | ![]({item['Image']}) | {item['Title']} | {item['Discounted Price']} | {item['Original Price']} | {item['Discount %']} | [Link]({item['Link']}) |\n")
+
     print("✅ Saved to AmiAmi_sales.md")
+
+    # Save to Excel with filters, auto width and custom formatting for the Title column
+    df = pd.DataFrame(final_results)
+    excel_filename = "AmiAmi_sales.xlsx"
+    with pd.ExcelWriter(excel_filename, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Sheet1")
+        workbook = writer.book
+        worksheet = writer.sheets["Sheet1"]
+
+        # Add an autofilter to the header row.
+        worksheet.autofilter(0, 0, len(df.index), len(df.columns) - 1)
+
+        # Create a format for the Title column with text wrap.
+        title_format = workbook.add_format({"text_wrap": True})
+
+        # Set column widths. For Title, use fixed width and wrap text.
+        for i, col in enumerate(df.columns):
+            if col == "Title":
+                # Set Title column width to 50 (adjust as needed) with text wrapping.
+                worksheet.set_column(i, i, 50, title_format)
+            else:
+                # Auto-adjust other columns width based on maximum content length.
+                # Get maximum width between header and all cell values.
+                column_data = df[col].astype(str)
+                max_len = max(column_data.map(len).max(), len(col)) + 2
+                worksheet.set_column(i, i, max_len)
+    print(f"✅ Saved to {excel_filename}")
 
     # Optional print preview
     for item in final_results:
-        print(f"Title: {item['Title']}")
-        print(f"Link: {item['Link']}")
-        print(f"Discounted Price: {item['Discounted Price']}")
-        print(f"Original Price:   {item['Original Price']}")
-        print(f"Discount:         {item['Discount %']}\n")
+        print(f"Condition:       {item['Condition']}")
+        print(f"Title:           {item['Title']}")
+        print(f"Link:            {item['Link']}")
+        print(f"Image:           {item['Image']}")
+        print(f"Discounted Price:{item['Discounted Price']}")
+        print(f"Original Price:  {item['Original Price']}")
+        print(f"Discount:        {item['Discount %']}\n")
 
 if __name__ == "__main__":
     asyncio.run(main())
