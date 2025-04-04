@@ -115,7 +115,7 @@ async def main():
     print("✅ Saved to AmiAmi_sales.csv")
 
     # Save to Markdown
-    with open("AmiAmi_sales.md", "w", encoding="utf-8") as f:
+    with open("README.md", "w", encoding="utf-8") as f:
         f.write("### 📦 AmiAmi Discounted Figures\n\n")
         f.write("| Condition | Pic | Title | Discounted Price | Original Price | Discount | Link |\n")
         f.write("|-----------|-----|-------|------------------|----------------|----------|------|\n")
