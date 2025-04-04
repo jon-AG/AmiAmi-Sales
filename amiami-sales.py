@@ -88,7 +88,11 @@ async def main():
     results = await scrape()
     print(f"\n📦 Finished scraping. Total products found: {len(results)}")
 
-    final_results = []
+    final_results = sorted(
+    final_results,
+    key=lambda x: float(x["Discount %"].replace("%", "")),
+    reverse=True
+    )
     for condition, title, link, discounted_str, original_str, img_url in results:
         try:
             discounted = int(discounted_str.replace(" JPY", "").replace(",", ""))
