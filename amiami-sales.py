@@ -3,6 +3,7 @@ import asyncio
 import pandas as pd
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
+import sys
 
 # === Config ===
 base_search_url = "https://www.amiami.com/eng/search/list/?s_keywords=1/7&s_st_condition_flg=1&s_st_list_newitem_available=1&pagecnt="
@@ -87,6 +88,8 @@ async def scrape():
 async def main():
     results = await scrape()
     print(f"\n📦 Finished scraping. Total products found: {len(results)}")
+    if len(results) == 0 :
+        sys.exit()
 
     final_results = []
     for condition, title, link, discounted_str, original_str, img_url in results:
