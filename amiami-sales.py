@@ -21,6 +21,8 @@ async def scrape():
         await page.goto(base_search_url + "1")
         await page.wait_for_timeout(3000)
         content = await page.content()
+        print(content[:3000])  # print first 3000 chars to logs
+
         soup = BeautifulSoup(content, "html.parser")
 
         page_items = soup.find_all("li", class_="pager-list__item pager-list__item_num pconly")
