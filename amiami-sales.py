@@ -1,5 +1,6 @@
 import re
 import asyncio
+import random
 import pandas as pd
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
@@ -13,32 +14,51 @@ async def scrape():
     results = []
     print("🔍 Launching browser...")
     async with async_playwright() as p:
+        # Launch in headless mode; if you experience issues, try running non-headless for debugging.
         browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+        # Set a standard desktop viewport for realistic page rendering.
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            viewport={"width": 1920, "height": 1080}
+        )
         page = await context.new_page()
 
-        print("🔍 Loading first page...")
-        await page.goto(base_search_url + "1")
-        await page.wait_for_timeout(3000)
-        content = await page.content()
-        print(content[:3000])  # print first 3000 chars to logs
+        # Inject stealth script to mask automation fingerprints
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            window.navigator.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+        """)
 
+        print("🔍 Loading first page with stealth...")
+        await page.goto(base_search_url + "1")
+        # Wait a random amount between 3 and 5 seconds
+        await page.wait_for_timeout(random.randint(3000, 5000))
+        content = await page.content()
+        print(content[:3000])  # Debug: print first 3000 chars
         soup = BeautifulSoup(content, "html.parser")
 
+        # Find all <li> elements with page numbers
         page_items = soup.find_all("li", class_="pager-list__item pager-list__item_num pconly")
         page_numbers = [int(li.text.strip()) for li in page_items if li.text.strip().isdigit()]
         total_pages = max(page_numbers) if page_numbers else 1
-        # total_pages = 1  # Override for testing
-
         print(f"✅ Total pages found: {total_pages}")
+        # Optional: temporarily reduce pages for testing
+        # total_pages = 1
 
         for page_num in range(1, total_pages + 1):
             print(f"➡️ Scraping page {page_num} of {total_pages}")
-            await page.goto(base_search_url + str(page_num))
-            await page.wait_for_timeout(3000)
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await page.wait_for_timeout(3000)
+            try:
+                await page.goto(base_search_url + str(page_num))
+            except Exception as e:
+                print(f"⚠️ Error loading page {page_num}: {e}")
+                continue
 
+            await page.wait_for_timeout(random.randint(3000, 5000))
+            # Scroll to the bottom to trigger lazy loading (if any)
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await page.wait_for_timeout(random.randint(3000, 5000))
             content = await page.content()
             soup = BeautifulSoup(content, "html.parser")
             product_links = soup.find_all("a", href=True)
@@ -58,12 +78,11 @@ async def scrape():
                     condition = "New"
                     img_url = ""
                     if product_container:
-                        # ✅ Extract the actual image URL from the <img> tag
+                        # Extract image URL
                         img_tag = product_container.find("img")
                         if img_tag and "src" in img_tag.attrs:
                             img_url = img_tag["src"]
-
-                        # ✅ Determine status from tag list
+                        # Determine status from tag list
                         status_ul = product_container.find("ul", class_="newly-added-items__item__tag-list")
                         if status_ul:
                             for li in status_ul.find_all("li"):
@@ -72,6 +91,7 @@ async def scrape():
                                     condition = li.get_text(strip=True)
                                     break
 
+                    # If no proper image URL or original price tag, skip
                     if not img_url.startswith("http") or not original_price_tag:
                         continue
 
@@ -90,8 +110,8 @@ async def scrape():
 async def main():
     results = await scrape()
     print(f"\n📦 Finished scraping. Total products found: {len(results)}")
-    if len(results) == 0 :
-        sys.exit()
+    if len(results) == 0:
+        sys.exit("🚨 No products found; likely blocked or challenge page returned.")
 
     final_results = []
     for condition, title, link, discounted_str, original_str, img_url in results:
@@ -112,20 +132,17 @@ async def main():
             print(f"⚠️ Error processing item '{title}': {e}")
             continue
 
-    # ✅ Sort by Discount %, descending
-    final_results.sort(
-        key=lambda x: float(x["Discount %"].replace("%", "")),
-        reverse=True
-    )
+    # Sort by discount descending
+    final_results.sort(key=lambda x: float(x["Discount %"].replace("%", "")), reverse=True)
 
-    # Save to CSV
+    # Save to CSV (pipe-separated to avoid comma issues)
     with open("AmiAmi_sales.csv", "w", encoding="utf-8") as f:
         f.write("Condition|Title|Link|Discounted Price|Original Price|Discount|Image\n")
         for item in final_results:
             f.write(f"{item['Condition']}|{item['Title']}|{item['Link']}|{item['Discounted Price']}|{item['Original Price']}|{item['Discount %']}|{item['Image']}\n")
     print("✅ Saved to AmiAmi_sales.csv")
 
-    # Save to Markdown
+    # Save to Markdown (for GitHub preview)
     with open("README.md", "w", encoding="utf-8") as f:
         f.write("### 📦 AmiAmi Discounted Figures\n\n")
         f.write("| Condition | Pic | Title | Discounted Price | Original Price | Discount | Link |\n")
@@ -134,21 +151,15 @@ async def main():
             f.write(f"| {item['Condition']} | ![]({item['Image']}) | {item['Title']} | {item['Discounted Price']} | {item['Original Price']} | {item['Discount %']} | [Link]({item['Link']}) |\n")
     print("✅ Saved to README.md")
 
-    # Save to Excel with filters, auto width and custom formatting for the Title column
+    # Save to Excel
     df = pd.DataFrame(final_results)
     excel_filename = "AmiAmi_sales.xlsx"
     with pd.ExcelWriter(excel_filename, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False, sheet_name="Sheet1")
         workbook = writer.book
         worksheet = writer.sheets["Sheet1"]
-
-        # Add an autofilter to the header row.
         worksheet.autofilter(0, 0, len(df.index), len(df.columns) - 1)
-
-        # Create a format for the Title column with text wrap.
         title_format = workbook.add_format({"text_wrap": True})
-
-        # Set column widths. For Title, use fixed width and wrap text.
         for i, col in enumerate(df.columns):
             if col == "Title":
                 worksheet.set_column(i, i, 50, title_format)
@@ -158,7 +169,6 @@ async def main():
                 worksheet.set_column(i, i, max_len)
     print(f"✅ Saved to {excel_filename}")
 
-    # Optional print preview
     for item in final_results:
         print(f"Condition:       {item['Condition']}")
         print(f"Title:           {item['Title']}")
